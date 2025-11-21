@@ -22,16 +22,19 @@ async def new_openthermgwswitch(config: Dict[str, Any]) -> cg.Pvariable:
     return var
 
 def get_entity_validation_schema(entity: schema.SwitchSchema) -> cv.Schema:
-    return switch.SWITCH_SCHEMA.extend({
-        cv.GenerateID(): cv.declare_id(OpenThermGatewaySwitch),
-#        cv.Optional(CONF_MODE, entity["default_mode"]): 
-#            cv.enum({
-#                "restore_default_on": cg.RawExpression("openthermgw::OpenthermSwitchGWMode::OPENTHERM_SWITCH_RESTORE_DEFAULT_ON"), 
-#                "restore_default_off": cg.RawExpression("openthermgw::OpenthermSwitchGWMode::OPENTHERM_SWITCH_RESTORE_DEFAULT_OFF"),
-#                "start_on": cg.RawExpression("openthermgw::OpenthermSwitchGWMode::OPENTHERM_SWITCH_START_ON"),
-#                "start_off": cg.RawExpression("openthermgw::OpenthermSwitchGWMode::OPENTHERM_SWITCH_START_OFF")
-#            })
-    }).extend(cv.COMPONENT_SCHEMA)
+    return (
+        switch.switch_schema(OpenThermGatewaySwitch)
+        # .extend({
+        #     cv.Optional(CONF_MODE, entity["default_mode"]): 
+        #         cv.enum({
+        #             "restore_default_on": cg.RawExpression("openthermgw::OpenthermSwitchGWMode::OPENTHERM_SWITCH_RESTORE_DEFAULT_ON"), 
+        #             "restore_default_off": cg.RawExpression("openthermgw::OpenthermSwitchGWMode::OPENTHERM_SWITCH_RESTORE_DEFAULT_OFF"),
+        #             "start_on": cg.RawExpression("openthermgw::OpenthermSwitchGWMode::OPENTHERM_SWITCH_START_ON"),
+        #             "start_off": cg.RawExpression("openthermgw::OpenthermSwitchGWMode::OPENTHERM_SWITCH_START_OFF")
+        #         })
+        # })
+        .extend(cv.COMPONENT_SCHEMA)
+    )
 
 CONFIG_SCHEMA = validate.create_component_schema(schema.SWITCHES, get_entity_validation_schema)
 
