@@ -5,13 +5,17 @@ Copyright 2018, Ihor Melnyk
 
 #include "OpenTherm.h"
 #include "esphome/core/log.h"
+
 static const char * TAG = "OpenTherm";
+
 using namespace esphome;
 
-OpenTherm::OpenTherm(int inPin, int outPin, bool isSlave):
+OpenTherm::OpenTherm(InternalGPIOPin *inPin, InternalGPIOPin *outPin, bool isSlave):
 	status(OpenThermStatus::NOT_INITIALIZED),
 	inPin(inPin),
+	inIsrPin(inPin->to_isr()),
 	outPin(outPin),
+	outIsrPin(outPin->to_isr()),
 	isSlave(isSlave),
 	response(0),
 	responseStatus(OpenThermResponseStatus::NONE),
@@ -22,23 +26,19 @@ OpenTherm::OpenTherm(int inPin, int outPin, bool isSlave):
 {
 }
 
-void OpenTherm::begin(void(*handleInterruptCallback)(void), void(*processResponseCallback)(unsigned long, OpenThermResponseStatus, void *), void *pCallbackUser)
+void OpenTherm::begin(void(*handleInterruptCallback)(void *), void(*processResponseCallback)(unsigned long, OpenThermResponseStatus, void *), void *pCallbackUser)
 {
-	pinMode(inPin, INPUT);
-	pinMode(outPin, OUTPUT);
+	// pinMode(inPin, INPUT);
+	// pinMode(outPin, OUTPUT);
 	if (handleInterruptCallback != NULL) {
 		this->handleInterruptCallback = handleInterruptCallback;
-		this->pCallbackUser=pCallbackUser;
-		attachInterrupt(digitalPinToInterrupt(inPin), handleInterruptCallback, CHANGE);
+		this->pCallbackUser = pCallbackUser;
+		// attachInterrupt(digitalPinToInterrupt(inPin), handleInterruptCallback, CHANGE);
+		inPin->attach_interrupt<void>(handleInterruptCallback, pCallbackUser, gpio::INTERRUPT_ANY_EDGE);
 	}
 	activateBoiler();
 	status = OpenThermStatus::READY;
 	this->processResponseCallback = processResponseCallback;
-}
-
-void OpenTherm::begin(void(*handleInterruptCallback)(void))
-{
-	begin(handleInterruptCallback, NULL, NULL);
 }
 
 bool IRAM_ATTR OpenTherm::isReady()
@@ -46,35 +46,38 @@ bool IRAM_ATTR OpenTherm::isReady()
 	return status == OpenThermStatus::READY;
 }
 
-int IRAM_ATTR OpenTherm::readState() {
-	return digitalRead(inPin);
+bool IRAM_ATTR OpenTherm::readState() {
+	// return digitalRead(inPin);
+	return inIsrPin.digital_read();
 }
 
 void OpenTherm::setActiveState() {
-	digitalWrite(outPin, LOW);
+	outPin->digital_write(false);
+	// digitalWrite(outPin, LOW);
 }
 
 void OpenTherm::setIdleState() {
-	digitalWrite(outPin, HIGH);
+	outPin->digital_write(true);
+	// digitalWrite(outPin, HIGH);
 }
 
 void OpenTherm::activateBoiler() {
 	setIdleState();
-	delay(1000);
+	esphome::delay(1000);
 }
 
 void OpenTherm::sendBit(bool high) {
 	if (high) setActiveState(); else setIdleState();
-	delayMicroseconds(500);
+	esphome::delayMicroseconds(500);
 	if (high) setIdleState(); else setActiveState();
-	delayMicroseconds(500);
+	esphome::delayMicroseconds(500);
 }
 
 bool OpenTherm::sendRequestAsync(unsigned long request)
 {
-	noInterrupts();
+	// noInterrupts();
 	const bool ready = isReady();
-	interrupts();
+	// interrupts();
 
 	if (!ready)
 	  return false;
@@ -83,15 +86,16 @@ bool OpenTherm::sendRequestAsync(unsigned long request)
 	response = 0;
 	responseStatus = OpenThermResponseStatus::NONE;
 
-	sendBit(HIGH); //start bit
+	sendBit(true); //start bit
 	for (int i = 31; i >= 0; i--) {
-		sendBit(bitRead(request, i));
+		// sendBit(bitRead(request, i));
+		sendBit(((request >> i) & 1) == 1);
 	}
-	sendBit(HIGH); //stop bit
+	sendBit(true); //stop bit
 	setIdleState();
 
 	status = OpenThermStatus::RESPONSE_WAITING;
-	responseTimestamp = micros();
+	responseTimestamp = esphome::micros();
 	return true;
 }
 
@@ -99,12 +103,12 @@ unsigned long OpenTherm::sendRequest(unsigned long request)
 {
 	while (!isReady()) {
 		process();
-		yield();
+		esphome::yield();
 	}
 	if (!sendRequestAsync(request)) return 0;
 	while (!isReady()) {
 		process();
-		yield();
+		esphome::yield();
 	}
 
 	return response;
@@ -116,11 +120,12 @@ bool OpenTherm::sendResponse(unsigned long request)
 	response = 0;
 	responseStatus = OpenThermResponseStatus::NONE;
 
-	sendBit(HIGH); //start bit
+	sendBit(true); //start bit
 	for (int i = 31; i >= 0; i--) {
-		sendBit(bitRead(request, i));
+		// sendBit(bitRead(request, i));
+		sendBit(((request >> i) & 1) == 1);
 	}
-	sendBit(HIGH); //stop bit
+	sendBit(true); //stop bit
 	setIdleState();
 	status = OpenThermStatus::READY;
 	return true;
@@ -136,9 +141,9 @@ OpenThermResponseStatus OpenTherm::getLastResponseStatus()
 	return responseStatus;
 }
 
-void IRAM_ATTR OpenTherm::handleInterrupt()
+void OpenTherm::handleInterrupt()
 {
-	unsigned long newTs = micros();
+	unsigned long newTs = esphome::micros();
 		
 	// Filter interrupts glitchs
 	if ((newTs - lastInterruptTs) < 100)
@@ -148,24 +153,24 @@ void IRAM_ATTR OpenTherm::handleInterrupt()
 
 	// Wait 30us before read state to make sure digitalRead() will return the "correct" value
 	// I don't understand why but sometimes the interrupt is called but the input level is still in transition
-	delayMicroseconds(30);
-	
-	int state=readState();
+	esphome::delayMicroseconds(30);
+
+	bool state = readState();
 
 	lastInterruptTs=newTs;
-	
+
 	if (isReady())
 	{
-		if (isSlave && state == HIGH) {
+		if (isSlave && state) {
 		   status = OpenThermStatus::RESPONSE_WAITING;
 		}
 		else {
 			return;
 		}
-	}					
-	
+	}
+
 	if (status == OpenThermStatus::RESPONSE_WAITING) {
-		if (state == HIGH) {
+		if (state) {
 			status = OpenThermStatus::RESPONSE_START_BIT;
 			responseTimestamp = newTs;
 		}
@@ -175,7 +180,7 @@ void IRAM_ATTR OpenTherm::handleInterrupt()
 		}
 	}
 	else if (status == OpenThermStatus::RESPONSE_START_BIT) {
-		if ((deltaTs > 250) && (deltaTs < 750) && state == LOW) {
+		if ((deltaTs > 250) && (deltaTs < 750) && !state) {
 			status = OpenThermStatus::RESPONSE_RECEIVING;
 			responseTimestamp = newTs;
 			responseBitIndex = 0;
@@ -186,7 +191,7 @@ void IRAM_ATTR OpenTherm::handleInterrupt()
 		}
 	}
 	else if (status == OpenThermStatus::RESPONSE_RECEIVING) {
-		if ((deltaTs) > 750 && deltaTs < 1250) { // bitDuration should not bigger than 1500			
+		if ((deltaTs) > 750 && deltaTs < 1250) { // bitDuration should not bigger than 1500
 			if (responseBitIndex < 32) {
 				response = (response << 1) | !state;
 				responseTimestamp = newTs;
@@ -199,23 +204,23 @@ void IRAM_ATTR OpenTherm::handleInterrupt()
 		} else if(deltaTs > 1250) {
 			status = OpenThermStatus::RESPONSE_INVALID;
 			responseTimestamp = newTs;
-		}		
+		}
 	}
 }
 
 bool OpenTherm::process()
 {
-	noInterrupts();
+	// noInterrupts();
 	OpenThermStatus st = status;
 	unsigned long ts = responseTimestamp;
-	interrupts();
-	
+	// interrupts();
+
 	bool bDidProcessMessage=false;
-	
-	if (st == OpenThermStatus::READY) 
+
+	if (st == OpenThermStatus::READY)
 		return bDidProcessMessage;
-		
-	unsigned long newTs = micros();		
+
+	unsigned long newTs = esphome::micros();
 	if (st != OpenThermStatus::NOT_INITIALIZED && st != OpenThermStatus::DELAY && (newTs - ts) > 1000000) {
 		status = OpenThermStatus::READY;
 		responseStatus = OpenThermResponseStatus::TIMEOUT;
@@ -254,7 +259,7 @@ bool OpenTherm::process()
 
 bool OpenTherm::parity(unsigned long frame) //odd parity
 {
-	byte p = 0;
+	uint8_t p = 0;
 	unsigned long tmp=frame;
 	while (tmp > 0)
 	{
@@ -302,19 +307,20 @@ bool OpenTherm::isValidParity(unsigned long message)
 
 bool OpenTherm::isValidResponse(unsigned long response)
 {
-	byte msgType = (response << 1) >> 29;
+	uint8_t msgType = (response << 1) >> 29;
 	return msgType == READ_ACK || msgType == WRITE_ACK;
 }
 
 bool OpenTherm::isValidRequest(unsigned long request)
 {
-	byte msgType = (request << 1) >> 29;
+	uint8_t msgType = (request << 1) >> 29;
 	return msgType == READ_DATA || msgType == WRITE_DATA;
 }
 
 void OpenTherm::end() {
 	if (this->handleInterruptCallback != NULL) {
-		detachInterrupt(digitalPinToInterrupt(inPin));
+		// detachInterrupt(digitalPinToInterrupt(inPin));
+		inPin->detach_interrupt();
 	}
 }
 
@@ -432,7 +438,7 @@ bool OpenTherm::setDHWSetpoint(float temperature) {
     unsigned long response = sendRequest(buildRequest(OpenThermMessageType::WRITE_DATA, OpenThermMessageID::TdhwSet, data));
     return isValidResponse(response);
 }
-    
+
 float OpenTherm::getDHWTemperature() {
     unsigned long response = sendRequest(buildRequest(OpenThermMessageType::READ_DATA, OpenThermMessageID::Tdhw, 0));
     return isValidResponse(response) ? getFloat(response) : 0;

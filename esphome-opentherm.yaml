@@ -2,15 +2,16 @@ esphome:
   name: opentherm
   friendly_name: OpenTherm
 
-external_components:  
+external_components:
   - source:
       type: local
-      path: my_components
+      path: components
 
 esp32:
-  board: esp32dev
+  variant: esp32s3
   framework:
-    type: arduino
+    # type: arduino
+    type: esp-idf
 
 # Enable logging
 logger:
@@ -18,10 +19,11 @@ logger:
 # Enable Home Assistant API
 api:
   encryption:
-    key: ""
+    key: "k2kxFGoGIuB8CU2UsMNjOmT4aXAJglOmhMSMjo9rU7g="
 
 ota:
-  password: ""
+  - platform: esphome
+    encryption:
 
 wifi:
   ssid: !secret wifi_ssid
@@ -33,13 +35,13 @@ wifi:
     password: ""
 
 captive_portal:
-    
+
 # OTGW Configuration
 openthermgw:
-  pin_thermostat_in: 17
-  pin_thermostat_out: 18
-  pin_boiler_in: 13
-  pin_boiler_out: 27
+  # pin_thermostat_in: 4
+  # pin_thermostat_out: 5
+  # pin_boiler_in: 7
+  # pin_boiler_out: 8
 
   ch_enable: true
   dhw_enable: true
@@ -66,8 +68,9 @@ button:
     name: "Reboot"
 
 # OTGW Temperature sensor
-dallas:
-  - pin: 16
+one_wire:
+  - platform: gpio
+    pin: 2
 
 ######## Text sensors ########
 text_sensor:
@@ -124,7 +127,7 @@ text_sensor:
 binary_sensor:
   # Status
   - platform: status
-    name: "Statut" 
+    name: "Statut"
 
   # OTGW Boiler status
   - platform: openthermgw
@@ -151,7 +154,7 @@ binary_sensor:
     fault_waterpress:
       name: "Pression d'eau faible"
     fault_gasflame:
-      name: "Erreur de gaz/flamme"
+      name: "Erreur de gaz⁄flamme"
     fault_airpress:
       name: "Erreur de pression d'air"
     fault_watertemp:
@@ -180,7 +183,7 @@ sensor:
         - text_sensor.template.publish:
             id: uptime_human
             state: !lambda |-
-              int seconds = round(id(uptime_seconds).raw_state);
+              int seconds = round(id(uptime_seconds).get_raw_state());
               int days = seconds / (24 * 3600);
               seconds = seconds % (24 * 3600);
               int hours = seconds / 3600;
@@ -195,11 +198,11 @@ sensor:
               ).c_str();
 
   # OTGW Temperature sensor
-  - platform: dallas
+  - platform: dallas_temp
     address: 0x7dc76a750e64ff28
     name: "T° OTGW"
 
-  - platform: openthermgw  
+  - platform: openthermgw
   # OTGW Diagnostics
     fault_oem:
       name: "Code erreur"
@@ -234,7 +237,7 @@ sensor:
     slave_ot_version:
       name: "Version OT Slave"
 
-      
+
   # OTGW Sensors
     t_set:
       name: "T° Consigne"
@@ -243,7 +246,7 @@ sensor:
     t_set_dhw:
       name: "T° Consigne Eau"
     t_roomset:
-      name: "T° Demandée"  
+      name: "T° Demandée"
     t_room:
       name: "T° Thermostat"
     t_boiler:
@@ -258,7 +261,7 @@ sensor:
       name: "T° Echappement"
 
     bar_chpress:
-      name: "Pression Eau CH"    
+      name: "Pression Eau CH"
     ls_dhwflowrate:
       name: "Debit Eau"
 
@@ -275,7 +278,7 @@ sensor:
       name: "T° Ajustement Chaudière Inf."
     max_t_set:
       name: "T° Ajustement Eau Chaudière Max"
-      
+
 
     # Unknown messages
     Unknown99:

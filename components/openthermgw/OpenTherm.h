@@ -14,7 +14,17 @@ P MGS-TYPE SPARE DATA-ID  DATA-VALUE
 #define OpenTherm_h
 
 #include <stdint.h>
-#include <Arduino.h>
+
+#include "esphome/core/gpio.h"
+#include "esphome/core/hal.h"
+
+#ifndef ICACHE_RAM_ATTR
+#define ICACHE_RAM_ATTR
+#endif
+
+#ifndef IRAM_ATTR
+#define IRAM_ATTR ICACHE_RAM_ATTR
+#endif
 
 enum OpenThermResponseStatus {
 	NONE,
@@ -143,10 +153,19 @@ enum OpenThermStatus {
 class OpenTherm
 {
 public:
-	OpenTherm(int inPin = 4, int outPin = 5, bool isSlave = false);
+	OpenTherm(esphome::InternalGPIOPin *inPin, esphome::InternalGPIOPin *outPin, bool isSlave = false);
 	volatile OpenThermStatus status;
-	void begin(void(*handleInterruptCallback)(void));
-	void begin(void(*handleInterruptCallback)(void), void(*processResponseCallback)(unsigned long, OpenThermResponseStatus, void *), void *pCallbackUser);
+
+	template<typename T> void begin(void(*handleInterruptCallback)(T *), void(*processResponseCallback)(unsigned long, OpenThermResponseStatus, T *), T *pCallbackUser)
+	{
+		this->begin(reinterpret_cast<void (*)(void *)>(handleInterruptCallback), reinterpret_cast<void (*)(unsigned long, OpenThermResponseStatus, void *)>(processResponseCallback), reinterpret_cast<void *>(pCallbackUser));
+	}
+
+	template<typename T> void begin(void(*handleInterruptCallback)(T *), T *pCallbackUser)
+	{
+		this->begin(reinterpret_cast<void (*)(void *)>(handleInterruptCallback), nullptr, reinterpret_cast<void *>(pCallbackUser));
+	}
+
 	bool isReady();
 	unsigned long sendRequest(unsigned long request);
 	bool sendResponse(unsigned long request);
@@ -159,8 +178,8 @@ public:
 	unsigned long buildResponse(OpenThermMessageType type, OpenThermMessageID id, unsigned int data);
 	unsigned long getLastResponse();
 	OpenThermResponseStatus getLastResponseStatus();
-	const char *statusToString(OpenThermResponseStatus status);
-	void handleInterrupt();
+	static const char *statusToString(OpenThermResponseStatus status);
+	void IRAM_ATTR handleInterrupt();
 	bool process();
 	void end();
 
@@ -169,7 +188,7 @@ public:
 	bool parity(unsigned long frame);
 	OpenThermMessageType getMessageType(unsigned long message);
 	OpenThermMessageID getDataID(unsigned long frame);
-	const char *messageTypeToString(OpenThermMessageType message_type);
+	static const char *messageTypeToString(OpenThermMessageType message_type);
 	bool isValidParity(unsigned long message);
 	bool isValidRequest(unsigned long request);
 	bool isValidResponse(unsigned long response);
@@ -202,33 +221,29 @@ public:
 	unsigned char getFault();
 
 private:
-	const int inPin;
-	const int outPin;
+	void begin(void(*handleInterruptCallback)(void *), void(*processResponseCallback)(unsigned long, OpenThermResponseStatus, void *), void *pCallbackUser);
+
+	esphome::InternalGPIOPin *inPin = nullptr;
+	esphome::ISRInternalGPIOPin inIsrPin{};
+	esphome::InternalGPIOPin *outPin = nullptr;
+	esphome::ISRInternalGPIOPin outIsrPin{};
 	const bool isSlave;
 
 	volatile unsigned long response;
 	volatile OpenThermResponseStatus responseStatus;
 	volatile unsigned long responseTimestamp;
-	volatile byte responseBitIndex;
+	volatile uint8_t responseBitIndex;
 	volatile unsigned long lastInterruptTs = 0;
 	
-	int readState();
+	bool readState();
 	void setActiveState();
 	void setIdleState();
 	void activateBoiler();
 
 	void sendBit(bool high);
-	void(*handleInterruptCallback)();
+	void(*handleInterruptCallback)(void *);
 	void(*processResponseCallback)(unsigned long, OpenThermResponseStatus, void *);
 	void *pCallbackUser;	
 };
-
-#ifndef ICACHE_RAM_ATTR
-#define ICACHE_RAM_ATTR
-#endif
-
-#ifndef IRAM_ATTR
-#define IRAM_ATTR ICACHE_RAM_ATTR
-#endif
 
 #endif // OpenTherm_h

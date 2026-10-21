@@ -57,32 +57,32 @@
 #endif
 
 namespace esphome {
-    namespace OpenThermGateway {    
+    namespace OpenThermGateway {
     	struct SAutoUpdateMessage
     	{
     		unsigned long msTimeUpdate=0;
     		unsigned long msTimeSinceLastUpdate=0;
     	};
-    	
+
         class OpenThermGateway: public PollingComponent, public api::CustomAPIDevice {
-        	public: 
+        	public:
 			OpenThermGateway();
 			virtual ~OpenThermGateway();
-			
-			void set_pin_thermostat_in(uint8_t pin) { m_pinThermostatIn=pin; }
-			void set_pin_thermostat_out(uint8_t pin) { m_pinThermostatOut=pin; }
-			void set_pin_boiler_in(uint8_t pin) { m_pinBoilerIn=pin; }
-			void set_pin_boiler_out(uint8_t pin) { m_pinBoilerOut=pin; }
-			
+
+			void set_pin_thermostat_in(InternalGPIOPin *pin) { m_pinThermostatIn=pin; }
+			void set_pin_thermostat_out(InternalGPIOPin *pin) { m_pinThermostatOut=pin; }
+			void set_pin_boiler_in(InternalGPIOPin *pin) { m_pinBoilerIn=pin; }
+			void set_pin_boiler_out(InternalGPIOPin *pin) { m_pinBoilerOut=pin; }
+
 			void set_ch_enable(bool bCHEnable) { m_bCHEnable = bCHEnable; }
 			void set_dhw_enable(bool bDHWEnable) { m_bDHWEnable = bDHWEnable; }
 			void set_cooling_enable(bool bCoolingEnable) { m_bCoolingEnable = bCoolingEnable; }
 			void set_otc_active(bool bOTCActive) { m_bOTCActive = bOTCActive; }
 			void set_ch2_active(bool bCH2Active) { m_bCH2Active = bCH2Active; }
-			
-			void add_initial_message(OpenThermMessageID message_id);			
+
+			void add_initial_message(OpenThermMessageID message_id);
 			void add_auto_update_message(OpenThermMessageID message_id, int32_t secUpdateTime);
-			
+
 			#define OPENTHERMGW_SET_SENSOR(entity) void set_ ## entity(sensor::Sensor* sensor) { this->entity = sensor; }
 			OPENTHERMGW_SENSOR_LIST(OPENTHERMGW_SET_SENSOR, )
 
@@ -103,16 +103,16 @@ namespace esphome {
 
 			#define OPENTHERMGW_SET_INPUT_SENSOR(entity) void set_ ## entity(sensor::Sensor* sensor) { this->entity = sensor; }
 			OPENTHERMGW_INPUT_SENSOR_LIST(OPENTHERMGW_SET_INPUT_SENSOR, )
-			
+
 			void setup() override;
-			void on_shutdown() override;			
+			void on_shutdown() override;
 			void dump_config() override;
 //			void control(const climate::ClimateCall & call) override;
 //		 	climate::ClimateTraits traits() override;
-			
+
 			void loop() override;
 			void update() override;
-        	
+
 			static void processRequestThermostat(unsigned long request, OpenThermResponseStatus status, void *pCallbackUser)
 			{
 				if(pCallbackUser!=NULL)
@@ -121,11 +121,11 @@ namespace esphome {
 
 
 		private:
-			uint8_t m_pinThermostatIn = 0;
-			uint8_t m_pinThermostatOut = 0;
-			uint8_t m_pinBoilerIn = 0;
-			uint8_t m_pinBoilerOut = 0;
-			    
+			InternalGPIOPin *m_pinThermostatIn = nullptr;
+			InternalGPIOPin *m_pinThermostatOut = nullptr;
+			InternalGPIOPin *m_pinBoilerIn = nullptr;
+			InternalGPIOPin *m_pinBoilerOut = nullptr;
+
 			bool m_bCHEnable = true;
 			bool m_bDHWEnable = true;
 			bool m_bCoolingEnable = false;
@@ -136,13 +136,13 @@ namespace esphome {
 			uint8_t m_dateMonth = 0xFF;
 			uint8_t m_dateDay = 0xFF;
 			uint8_t m_dateDOW = 0xFF;
-			uint8_t m_dateHour = 0xFF;		
+			uint8_t m_dateHour = 0xFF;
 			uint8_t m_dateMinute = 0xFF;
 			std::string m_strDate;
-			
+
 			unsigned long m_msLastLoop=0;
 			unsigned long m_msTimeSinceLastAutoUpdate=0;
-			
+
 			// Use macros to create fields for every entity specified in the ESPHome configuration
 			#define OPENTHERMGW_DECLARE_SENSOR(entity) sensor::Sensor* entity;
 			OPENTHERMGW_SENSOR_LIST(OPENTHERMGW_DECLARE_SENSOR, )
@@ -164,32 +164,34 @@ namespace esphome {
 
 			#define OPENTHERMGW_DECLARE_INPUT_SENSOR(entity) sensor::Sensor* entity;
 			OPENTHERMGW_INPUT_SENSOR_LIST(OPENTHERMGW_DECLARE_INPUT_SENSOR, )
-			    
+
 			// The set of initial messages to send on starting communication with the boiler
 			std::unordered_set<OpenThermMessageID> m_initial_messages;
-			
+
 			// Map with periodic messages
 			std::unordered_map<OpenThermMessageID, SAutoUpdateMessage> m_map_auto_update_messages;
-			
+
 			bool m_bStatusReceived = false;
 			bool m_bInitializing = true;
-			
+
 			std::unordered_set<OpenThermMessageID>::const_iterator m_current_message_iterator;
 			std::unordered_map<OpenThermMessageID, SAutoUpdateMessage>::const_iterator m_auto_update_message_iterator;
 
-			static OpenTherm *m_otThermostat;
-			static OpenTherm *m_otBoiler;
+			std::unique_ptr<OpenTherm> m_otThermostat = nullptr;
+			std::unique_ptr<OpenTherm> m_otBoiler = nullptr;
 
-			static void IRAM_ATTR handleInterruptThermostat();
-			static void IRAM_ATTR handleInterruptBoiler();
+			static void IRAM_ATTR handleInterruptThermostat(OpenThermGateway *arg);
+			static void IRAM_ATTR handleInterruptBoiler(OpenThermGateway *arg);
 
 			unsigned int build_request(OpenThermMessageID request_id);
-			
-			void processRequestThermostat(unsigned long request, OpenThermResponseStatus status);		
-			
+
+public:
+			void processRequestThermostat(unsigned long request, OpenThermResponseStatus status);
+
+private:
 			void parseRequest(OpenThermMessageType type, OpenThermMessageID dataID, uint16_t data);
 			void parseResponse(OpenThermMessageType type, OpenThermMessageID dataID, uint16_t data);
-			
+
 			void publishDate();
         };
 
